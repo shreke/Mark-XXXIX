@@ -35,6 +35,7 @@ from actions.computer_control  import computer_control
 from actions.game_updater      import game_updater
 from actions.tms_query         import tms_query
 from actions.tms_telegram      import tms_telegram
+from auth.login                import show_login
 
 
 def get_base_dir():
@@ -953,10 +954,12 @@ class JarvisLive:
                 self.ui.write_log("SYS: MAIA reconectada.")
 
 def main():
+    if not show_login():
+        sys.exit(0)
+
     ui = JarvisUI("face.png")
 
     def runner():
-        ui.wait_for_api_key()
         jarvis = JarvisLive(ui)
         try:
             asyncio.run(jarvis.run())
