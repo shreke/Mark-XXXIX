@@ -31,6 +31,7 @@ from actions.dev_agent         import dev_agent
 from actions.web_search        import web_search as web_search_action
 from actions.computer_control  import computer_control
 from actions.game_updater      import game_updater
+from actions.tms_query         import tms_query
 
 
 def get_base_dir():
@@ -58,9 +59,9 @@ def _load_system_prompt() -> str:
         return PROMPT_PATH.read_text(encoding="utf-8")
     except Exception:
         return (
-            "You are JARVIS, Tony Stark's AI assistant. "
-            "Be concise, direct, and always use the provided tools to complete tasks. "
-            "Never simulate or guess results — always call the appropriate tool."
+            "Sos MAIA, la asistente interna de Transportes Maman. "
+            "Respondé siempre en español rioplatense con voseo, de forma concisa y directa. "
+            "Usá las herramientas provistas para completar las tareas — nunca inventes datos."
         )
 
 _CTRL_RE = re.compile(r"<ctrl\d+>", re.IGNORECASE)
@@ -371,15 +372,28 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "shutdown_jarvis",
-        "description": (
-            "Shuts down the assistant completely. "
-            "Call this when the user expresses intent to end the conversation, "
-            "close the assistant, say goodbye, or stop Jarvis. "
-            "The user can say this in ANY language."
-        ),
+        "description": "Cierra el asistente MAIA. Llamar cuando el usuario quiera cerrar o despedirse, en cualquier idioma.",
         "parameters": {
             "type": "OBJECT",
             "properties": {},
+        }
+    },
+    {
+        "name": "tms_query",
+        "description": (
+            "Consulta o modifica la base de datos del TMS de Maman. "
+            "Usar para: buscar viajes, choferes, vehículos, citaciones, liquidaciones, gastos, tickets. "
+            "Para consultas usar action='query'. Para modificaciones usar action='write' y siempre confirmar antes. "
+            "NUNCA inventar datos — siempre llamar a esta herramienta para obtener información real."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "query (lectura) | write (escritura/modificación)"},
+                "sql":    {"type": "STRING", "description": "Query SQL a ejecutar"},
+                "params": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Parámetros del query (opcional)"}
+            },
+            "required": ["action", "sql"]
         }
     },
     {
@@ -526,7 +540,7 @@ class JarvisLive:
     def speak_error(self, tool_name: str, error: str):
         short = str(error)[:120]
         self.ui.write_log(f"ERR: {tool_name} — {short}")
-        self.speak(f"Sir, {tool_name} encountered an error. {short}")
+        self.speak(f"Hubo un error en {tool_name}. {short}")
 
     def _build_config(self) -> types.LiveConnectConfig:
         from datetime import datetime
@@ -534,6 +548,20 @@ class JarvisLive:
         memory     = load_memory()
         mem_str    = format_memory_for_prompt(memory)
         sys_prompt = _load_system_prompt()
+
+        import json as _json
+        _session_path = BASE_DIR / "config" / "session.json"
+        _usuario_nombre = "Usuario"
+        _usuario_rol = "operaciones"
+        if _session_path.exists():
+            try:
+                _sess = _json.loads(_session_path.read_text(encoding="utf-8"))
+                _usuario_nombre = _sess.get("nombre", "Usuario")
+                _usuario_rol = _sess.get("rol", "operaciones")
+            except Exception:
+                pass
+        sys_prompt = sys_prompt.replace("{USUARIO_NOMBRE}", _usuario_nombre)
+        sys_prompt = sys_prompt.replace("{USUARIO_ROL}", _usuario_rol)
 
         now      = datetime.now()
         time_str = now.strftime("%A, %B %d, %Y — %I:%M %p")
@@ -558,7 +586,7 @@ class JarvisLive:
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name="Charon"
+                        voice_name="Aoede"
                     )
                 )
             ),
@@ -568,7 +596,7 @@ class JarvisLive:
         name = fc.name
         args = dict(fc.args or {})
 
-        print(f"[JARVIS] 🔧 {name}  {args}")
+        print(f"[MAIA] 🔧 {name}  {args}")
         self.ui.set_state("THINKING")
 
         if name == "save_memory":
@@ -673,9 +701,13 @@ class JarvisLive:
                 r = await loop.run_in_executor(None, lambda: flight_finder(parameters=args, player=self.ui))
                 result = r or "Done."
 
+            elif name == "tms_query":
+                r = await loop.run_in_executor(None, lambda: tms_query(parameters=args, player=self.ui, speak=self.speak))
+                result = r or "Done."
+
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")
-                self.speak("Goodbye, sir.")
+                self.speak("Hasta luego.")
                 def _shutdown():
                     import time, os
                     time.sleep(1)
@@ -693,7 +725,7 @@ class JarvisLive:
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
 
-        print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
+        print(f"[MAIA] 📤 {name} → {str(result)[:80]}")
         return types.FunctionResponse(
             id=fc.id, name=name,
             response={"result": result}
@@ -705,7 +737,7 @@ class JarvisLive:
             await self.session.send_realtime_input(media=msg)
 
     async def _listen_audio(self):
-        print("[JARVIS] 🎤 Mic started")
+        print("[MAIA] 🎤 Mic started")
         loop = asyncio.get_event_loop()
 
         def callback(indata, frames, time_info, status):
@@ -726,15 +758,15 @@ class JarvisLive:
                 blocksize=CHUNK_SIZE,
                 callback=callback,
             ):
-                print("[JARVIS] 🎤 Mic stream open")
+                print("[MAIA] 🎤 Mic stream open")
                 while True:
                     await asyncio.sleep(0.1)
         except Exception as e:
-            print(f"[JARVIS] ❌ Mic: {e}")
+            print(f"[MAIA] ❌ Mic: {e}")
             raise
 
     async def _receive_audio(self):
-        print("[JARVIS] 👂 Recv started")
+        print("[MAIA] 👂 Recv started")
         out_buf, in_buf = [], []
 
         try:
@@ -770,25 +802,25 @@ class JarvisLive:
 
                             full_out = " ".join(out_buf).strip()
                             if full_out:
-                                self.ui.write_log(f"Jarvis: {full_out}")
+                                self.ui.write_log(f"MAIA: {full_out}")
                             out_buf = []
 
                     if response.tool_call:
                         fn_responses = []
                         for fc in response.tool_call.function_calls:
-                            print(f"[JARVIS] 📞 {fc.name}")
+                            print(f"[MAIA] 📞 {fc.name}")
                             fr = await self._execute_tool(fc)
                             fn_responses.append(fr)
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )
         except Exception as e:
-            print(f"[JARVIS] ❌ Recv: {e}")
+            print(f"[MAIA] ❌ Recv: {e}")
             traceback.print_exc()
             raise
 
     async def _play_audio(self):
-        print("[JARVIS] 🔊 Play started")
+        print("[MAIA] 🔊 Play started")
 
         stream = sd.RawOutputStream(
             samplerate=RECEIVE_SAMPLE_RATE,
@@ -817,7 +849,7 @@ class JarvisLive:
                 self.set_speaking(True)
                 await asyncio.to_thread(stream.write, chunk)
         except Exception as e:
-            print(f"[JARVIS] ❌ Play: {e}")
+            print(f"[MAIA] ❌ Play: {e}")
             raise
         finally:
             self.set_speaking(False)
@@ -832,7 +864,7 @@ class JarvisLive:
 
         while True:
             try:
-                print("[JARVIS] 🔌 Connecting...")
+                print("[MAIA] 🔌 Connecting...")
                 self.ui.set_state("THINKING")
                 config = self._build_config()
 
@@ -846,9 +878,9 @@ class JarvisLive:
                     self.out_queue      = asyncio.Queue(maxsize=10)
                     self._turn_done_event = asyncio.Event()
 
-                    print("[JARVIS] ✅ Connected.")
+                    print("[MAIA] ✅ Connected.")
                     self.ui.set_state("LISTENING")
-                    self.ui.write_log("SYS: JARVIS online.")
+                    self.ui.write_log("SYS: MAIA online.")
 
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
@@ -856,11 +888,11 @@ class JarvisLive:
                     tg.create_task(self._play_audio())
 
             except Exception as e:
-                print(f"[JARVIS] ⚠️ {e}")
+                print(f"[MAIA] ⚠️ {e}")
                 traceback.print_exc()
             self.set_speaking(False)
             self.ui.set_state("THINKING")
-            print("[JARVIS] 🔄 Reconnecting in 3s...")
+            print("[MAIA] 🔄 Reconnecting in 3s...")
             await asyncio.sleep(3)
 
 def main():
