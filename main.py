@@ -7,6 +7,7 @@ import traceback
 from pathlib import Path
 
 import sounddevice as sd
+import speech_recognition as sr
 from google import genai
 from google.genai import types
 from ui import JarvisUI
@@ -32,6 +33,7 @@ from actions.web_search        import web_search as web_search_action
 from actions.computer_control  import computer_control
 from actions.game_updater      import game_updater
 from actions.tms_query         import tms_query
+from actions.tms_telegram      import tms_telegram
 
 
 def get_base_dir():
@@ -379,6 +381,23 @@ TOOL_DECLARATIONS = [
         }
     },
     {
+        "name": "tms_telegram",
+        "description": (
+            "Envía un mensaje por Telegram a un miembro del equipo Maman usando el bot oficial. "
+            "Usar cuando el usuario pide mandar un resultado, reporte o aviso por Telegram. "
+            "NUNCA usar send_message ni abrir la app de Telegram para esto. "
+            "Destinatarios disponibles: reke, german, gaston."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "mensaje":      {"type": "STRING", "description": "Texto del mensaje a enviar"},
+                "destinatario": {"type": "STRING", "description": "reke | german | gaston (default: reke)"}
+            },
+            "required": ["mensaje"]
+        }
+    },
+    {
         "name": "tms_query",
         "description": (
             "Consulta o modifica la base de datos del TMS de Maman. "
@@ -494,6 +513,49 @@ TOOL_DECLARATIONS = [
     },
 ]
 
+class WakeWordDetector:
+    WAKE_WORDS = ["maia", "maya", "maía"]
+
+    def __init__(self):
+        self.recognizer = sr.Recognizer()
+        self.recognizer.energy_threshold = 300
+        self.recognizer.dynamic_energy_threshold = True
+        self._running = False
+        self._callback = None
+
+    def set_callback(self, fn):
+        self._callback = fn
+
+    def start(self):
+        self._running = True
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def stop(self):
+        self._running = False
+
+    def _loop(self):
+        mic = sr.Microphone(sample_rate=16000)
+        with mic as source:
+            self.recognizer.adjust_for_ambient_noise(source, duration=1)
+        print("[WAKE] 👂 Esperando 'MAIA'...")
+        while self._running:
+            try:
+                with mic as source:
+                    audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=3)
+                text = self.recognizer.recognize_google(audio, language="es-AR").lower()
+                print(f"[WAKE] oído: {text}")
+                if any(w in text for w in self.WAKE_WORDS):
+                    print("[WAKE] ✅ Wake word detectado!")
+                    if self._callback:
+                        self._callback()
+            except sr.WaitTimeoutError:
+                pass
+            except sr.UnknownValueError:
+                pass
+            except Exception as e:
+                print(f"[WAKE] ⚠️ {e}")
+
+
 class JarvisLive:
 
     def __init__(self, ui: JarvisUI):
@@ -506,6 +568,27 @@ class JarvisLive:
         self._speaking_lock = threading.Lock()
         self.ui.on_text_command = self._on_text_command
         self._turn_done_event: asyncio.Event | None = None
+        self._active = False
+        self._active_timer = None
+        self._wake_detector = WakeWordDetector()
+        self._wake_detector.set_callback(self._on_wake_word)
+        self._wake_detector.start()
+
+    def _on_wake_word(self):
+        self._active = True
+        self.ui.set_state("LISTENING")
+        self.ui.write_log("SYS: MAIA activada.")
+        self.speak("¿Sí?")
+        if self._active_timer:
+            self._active_timer.cancel()
+        self._active_timer = threading.Timer(30.0, self._deactivate)
+        self._active_timer.start()
+
+    def _deactivate(self):
+        self._active = False
+        self.ui.set_state("THINKING")
+        self.ui.write_log("SYS: MAIA en espera.")
+        print("[WAKE] 😴 MAIA desactivada, esperando wake word...")
 
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
@@ -705,6 +788,10 @@ class JarvisLive:
                 r = await loop.run_in_executor(None, lambda: tms_query(parameters=args, player=self.ui, speak=self.speak))
                 result = r or "Done."
 
+            elif name == "tms_telegram":
+                r = await loop.run_in_executor(None, lambda: tms_telegram(parameters=args, player=self.ui, speak=self.speak))
+                result = r or "Done."
+
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")
                 self.speak("Hasta luego.")
@@ -743,7 +830,7 @@ class JarvisLive:
         def callback(indata, frames, time_info, status):
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
-            if not jarvis_speaking and not self.ui.muted:
+            if not jarvis_speaking and not self.ui.muted and self._active:
                 data = indata.tobytes()
                 loop.call_soon_threadsafe(
                     self.out_queue.put_nowait,
@@ -804,6 +891,11 @@ class JarvisLive:
                             if full_out:
                                 self.ui.write_log(f"MAIA: {full_out}")
                             out_buf = []
+
+                            if self._active and self._active_timer:
+                                self._active_timer.cancel()
+                                self._active_timer = threading.Timer(30.0, self._deactivate)
+                                self._active_timer.start()
 
                     if response.tool_call:
                         fn_responses = []
