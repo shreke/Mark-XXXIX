@@ -37,8 +37,7 @@ def tms_telegram(parameters: dict, player=None, speak=None) -> str:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         data = urllib.parse.urlencode({
             "chat_id": chat_id,
-            "text": mensaje,
-            "parse_mode": "Markdown"
+            "text": mensaje
         }).encode()
         req = urllib.request.Request(url, data=data, method="POST")
         with urllib.request.urlopen(req, timeout=10) as resp:
