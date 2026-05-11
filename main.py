@@ -8,6 +8,7 @@ from pathlib import Path
 
 import sounddevice as sd
 import speech_recognition as sr
+from pynput import keyboard
 from google import genai
 from google.genai import types
 from ui import JarvisUI
@@ -573,6 +574,28 @@ class JarvisLive:
         self._wake_detector = WakeWordDetector()
         self._wake_detector.set_callback(self._on_wake_word)
         self._wake_detector.start()
+        self._start_keyboard_listener()
+
+    def _interrupt(self):
+        if self._is_speaking and self.audio_in_queue is not None:
+            while not self.audio_in_queue.empty():
+                try:
+                    self.audio_in_queue.get_nowait()
+                except Exception:
+                    break
+            self.set_speaking(False)
+            self.ui.write_log("SYS: interrumpida.")
+
+    def _start_keyboard_listener(self):
+        def on_press(key):
+            try:
+                if key == keyboard.Key.esc:
+                    self._interrupt()
+            except Exception:
+                pass
+        listener = keyboard.Listener(on_press=on_press)
+        listener.daemon = True
+        listener.start()
 
     def _on_wake_word(self):
         self._active = True
@@ -877,6 +900,9 @@ class JarvisLive:
                             txt = _clean_transcript(sc.input_transcription.text)
                             if txt:
                                 in_buf.append(txt)
+                                INTERRUPT_WORDS = ["pará", "para", "stop", "suficiente", "callate", "calláte"]
+                                if any(w in txt.lower() for w in INTERRUPT_WORDS):
+                                    self._interrupt()
 
                         if sc.turn_complete:
                             if self._turn_done_event:
