@@ -517,12 +517,13 @@ TOOL_DECLARATIONS = [
 class WakeWordDetector:
     WAKE_WORDS = ["maia", "maya", "maía"]
 
-    def __init__(self):
+    def __init__(self, ui=None):
         self.recognizer = sr.Recognizer()
         self.recognizer.energy_threshold = 300
         self.recognizer.dynamic_energy_threshold = True
         self._running = False
         self._callback = None
+        self._ui = ui
 
     def set_callback(self, fn):
         self._callback = fn
@@ -546,6 +547,9 @@ class WakeWordDetector:
                 text = self.recognizer.recognize_google(audio, language="es-AR").lower()
                 print(f"[WAKE] oído: {text}")
                 if any(w in text for w in self.WAKE_WORDS):
+                    if self._ui and self._ui.muted:
+                        print("[WAKE] micrófono muteado, ignorando wake word")
+                        continue
                     print("[WAKE] ✅ Wake word detectado!")
                     if self._callback:
                         self._callback()
@@ -571,7 +575,7 @@ class JarvisLive:
         self._turn_done_event: asyncio.Event | None = None
         self._active = False
         self._active_timer = None
-        self._wake_detector = WakeWordDetector()
+        self._wake_detector = WakeWordDetector(ui=self.ui)
         self._wake_detector.set_callback(self._on_wake_word)
         self._wake_detector.start()
         self._start_keyboard_listener()
@@ -604,7 +608,7 @@ class JarvisLive:
         self.speak("¿Sí?")
         if self._active_timer:
             self._active_timer.cancel()
-        self._active_timer = threading.Timer(30.0, self._deactivate)
+        self._active_timer = threading.Timer(45.0, self._deactivate)
         self._active_timer.start()
 
     def _deactivate(self):
@@ -631,6 +635,11 @@ class JarvisLive:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
             self.ui.set_state("LISTENING")
+        if not value and self._active:
+            if self._active_timer:
+                self._active_timer.cancel()
+            self._active_timer = threading.Timer(45.0, self._deactivate)
+            self._active_timer.start()
 
     def speak(self, text: str):
         if not self._loop or not self.session:
@@ -920,7 +929,7 @@ class JarvisLive:
 
                             if self._active and self._active_timer:
                                 self._active_timer.cancel()
-                                self._active_timer = threading.Timer(30.0, self._deactivate)
+                                self._active_timer = threading.Timer(45.0, self._deactivate)
                                 self._active_timer.start()
 
                     if response.tool_call:
