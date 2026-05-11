@@ -7,10 +7,10 @@ import traceback
 from pathlib import Path
 
 import sounddevice as sd
-import speech_recognition as sr
 from pynput import keyboard
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError
 from ui import JarvisUI
 from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
@@ -514,53 +514,6 @@ TOOL_DECLARATIONS = [
     },
 ]
 
-class WakeWordDetector:
-    WAKE_WORDS = ["maia", "maya", "maía"]
-
-    def __init__(self, ui=None):
-        self.recognizer = sr.Recognizer()
-        self.recognizer.energy_threshold = 300
-        self.recognizer.dynamic_energy_threshold = True
-        self._running = False
-        self._callback = None
-        self._ui = ui
-
-    def set_callback(self, fn):
-        self._callback = fn
-
-    def start(self):
-        self._running = True
-        threading.Thread(target=self._loop, daemon=True).start()
-
-    def stop(self):
-        self._running = False
-
-    def _loop(self):
-        mic = sr.Microphone(sample_rate=16000)
-        with mic as source:
-            self.recognizer.adjust_for_ambient_noise(source, duration=1)
-        print("[WAKE] 👂 Esperando 'MAIA'...")
-        while self._running:
-            try:
-                with mic as source:
-                    audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=3)
-                text = self.recognizer.recognize_google(audio, language="es-AR").lower()
-                print(f"[WAKE] oído: {text}")
-                if any(w in text for w in self.WAKE_WORDS):
-                    if self._ui and self._ui.muted:
-                        print("[WAKE] micrófono muteado, ignorando wake word")
-                        continue
-                    print("[WAKE] ✅ Wake word detectado!")
-                    if self._callback:
-                        self._callback()
-            except sr.WaitTimeoutError:
-                pass
-            except sr.UnknownValueError:
-                pass
-            except Exception as e:
-                print(f"[WAKE] ⚠️ {e}")
-
-
 class JarvisLive:
 
     def __init__(self, ui: JarvisUI):
@@ -573,11 +526,6 @@ class JarvisLive:
         self._speaking_lock = threading.Lock()
         self.ui.on_text_command = self._on_text_command
         self._turn_done_event: asyncio.Event | None = None
-        self._active = False
-        self._active_timer = None
-        self._wake_detector = WakeWordDetector(ui=self.ui)
-        self._wake_detector.set_callback(self._on_wake_word)
-        self._wake_detector.start()
         self._start_keyboard_listener()
 
     def _interrupt(self):
@@ -601,22 +549,6 @@ class JarvisLive:
         listener.daemon = True
         listener.start()
 
-    def _on_wake_word(self):
-        self._active = True
-        self.ui.set_state("LISTENING")
-        self.ui.write_log("SYS: MAIA activada.")
-        self.speak("¿Sí?")
-        if self._active_timer:
-            self._active_timer.cancel()
-        self._active_timer = threading.Timer(45.0, self._deactivate)
-        self._active_timer.start()
-
-    def _deactivate(self):
-        self._active = False
-        self.ui.set_state("THINKING")
-        self.ui.write_log("SYS: MAIA en espera.")
-        print("[WAKE] 😴 MAIA desactivada, esperando wake word...")
-
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
             return
@@ -635,11 +567,6 @@ class JarvisLive:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
             self.ui.set_state("LISTENING")
-        if not value and self._active:
-            if self._active_timer:
-                self._active_timer.cancel()
-            self._active_timer = threading.Timer(45.0, self._deactivate)
-            self._active_timer.start()
 
     def speak(self, text: str):
         if not self._loop or not self.session:
@@ -862,7 +789,7 @@ class JarvisLive:
         def callback(indata, frames, time_info, status):
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
-            if not jarvis_speaking and not self.ui.muted and self._active:
+            if not jarvis_speaking and not self.ui.muted:
                 data = indata.tobytes()
                 loop.call_soon_threadsafe(
                     self.out_queue.put_nowait,
@@ -926,11 +853,6 @@ class JarvisLive:
                             if full_out:
                                 self.ui.write_log(f"MAIA: {full_out}")
                             out_buf = []
-
-                            if self._active and self._active_timer:
-                                self._active_timer.cancel()
-                                self._active_timer = threading.Timer(45.0, self._deactivate)
-                                self._active_timer.start()
 
                     if response.tool_call:
                         fn_responses = []
@@ -1014,13 +936,21 @@ class JarvisLive:
                     tg.create_task(self._receive_audio())
                     tg.create_task(self._play_audio())
 
+            except APIError as e:
+                print(f"[MAIA] 🔌 APIError {e}. Reconectando...")
+                self.set_speaking(False)
+                self.ui.set_state("THINKING")
+                wait_time = 1 if "1011" in str(e) else 3
+                await asyncio.sleep(wait_time)
+                self.ui.write_log("SYS: MAIA reconectada.")
             except Exception as e:
                 print(f"[MAIA] ⚠️ {e}")
                 traceback.print_exc()
-            self.set_speaking(False)
-            self.ui.set_state("THINKING")
-            print("[MAIA] 🔄 Reconnecting in 3s...")
-            await asyncio.sleep(3)
+                self.set_speaking(False)
+                self.ui.set_state("THINKING")
+                print("[MAIA] 🔄 Reconectando en 3s...")
+                await asyncio.sleep(3)
+                self.ui.write_log("SYS: MAIA reconectada.")
 
 def main():
     ui = JarvisUI("face.png")
