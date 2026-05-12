@@ -949,6 +949,22 @@ class JarvisLive:
                     self.ui.set_state("LISTENING")
                     self.ui.write_log("SYS: MAIA online.")
 
+                    # Saludo inicial con nombre del usuario
+                    import json as _json
+                    _session_path = BASE_DIR / "config" / "session.json"
+                    _nombre = "ahí"
+                    try:
+                        if _session_path.exists():
+                            _sess = _json.loads(_session_path.read_text(encoding="utf-8"))
+                            _nombre = _sess.get("nombre") or _sess.get("nombres") or "ahí"
+                    except Exception:
+                        pass
+                    await asyncio.sleep(1.5)
+                    await self.session.send_client_content(
+                        turns={"parts": [{"text": f"El usuario que se acaba de loguear se llama {_nombre}. Saludalo por su nombre y preguntale en qué podés ayudarlo."}]},
+                        turn_complete=True
+                    )
+
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
                     tg.create_task(self._receive_audio())
