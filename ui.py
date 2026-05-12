@@ -72,6 +72,15 @@ class C:
 def qcol(h: str, a: int = 255) -> QColor:
     c = QColor(h); c.setAlpha(a); return c
 
+
+def _run_hidden(cmd, **kwargs):
+    if sys.platform == "win32":
+        kwargs.setdefault("creationflags", subprocess.CREATE_NO_WINDOW)
+    kwargs.setdefault("capture_output", True)
+    kwargs.setdefault("text", True)
+    return subprocess.run(cmd, **kwargs)
+
+
 class _SysMetrics:
     def __init__(self):
         self.cpu  = 0.0
@@ -124,10 +133,10 @@ class _SysMetrics:
     def _get_gpu(self) -> float:
         # NVIDIA
         try:
-            r = subprocess.run(
+            r = _run_hidden(
                 ["nvidia-smi", "--query-gpu=utilization.gpu",
                  "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=2
+                timeout=2
             )
             if r.returncode == 0:
                 vals = [float(v.strip()) for v in r.stdout.strip().split("\n") if v.strip()]
@@ -139,9 +148,9 @@ class _SysMetrics:
         # AMD (Linux)
         if _OS == "Linux":
             try:
-                r = subprocess.run(
+                r = _run_hidden(
                     ["rocm-smi", "--showuse", "--csv"],
-                    capture_output=True, text=True, timeout=2
+                    timeout=2
                 )
                 if r.returncode == 0:
                     for line in r.stdout.strip().split("\n"):
@@ -156,9 +165,9 @@ class _SysMetrics:
 
             # Intel GPU (Linux)
             try:
-                r = subprocess.run(
+                r = _run_hidden(
                     ["intel_gpu_top", "-J", "-s", "500"],
-                    capture_output=True, text=True, timeout=1
+                    timeout=1
                 )
                 if r.returncode == 0 and "Render/3D" in r.stdout:
                     import re
@@ -171,10 +180,10 @@ class _SysMetrics:
         # macOS — powermetrics (GPU Engine)
         if _OS == "Darwin":
             try:
-                r = subprocess.run(
+                r = _run_hidden(
                     ["sudo", "-n", "powermetrics", "-n", "1", "-i", "500",
                      "--samplers", "gpu_power"],
-                    capture_output=True, text=True, timeout=2
+                    timeout=2
                 )
                 if r.returncode == 0 and "GPU" in r.stdout:
                     import re
@@ -203,8 +212,8 @@ class _SysMetrics:
             pass
         if _OS == "Darwin":
             try:
-                r = subprocess.run(
-                    ["osx-cpu-temp"], capture_output=True, text=True, timeout=2
+                r = _run_hidden(
+                    ["osx-cpu-temp"], timeout=2
                 )
                 if r.returncode == 0:
                     import re
@@ -216,10 +225,10 @@ class _SysMetrics:
 
         if _OS == "Windows":
             try:
-                r = subprocess.run(
+                r = _run_hidden(
                     ["powershell", "-Command",
                      "(Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi).CurrentTemperature"],
-                    capture_output=True, text=True, timeout=3
+                    timeout=3
                 )
                 if r.returncode == 0 and r.stdout.strip():
                     raw = float(r.stdout.strip().split("\n")[0])

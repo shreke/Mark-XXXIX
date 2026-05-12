@@ -9,6 +9,8 @@ from pathlib import Path
 from datetime import datetime
 from urllib.parse import quote_plus
 
+_CF = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
 import pyautogui
 import numpy as np
 
@@ -56,11 +58,11 @@ def _get_api_key() -> str:
 def _open_url(url: str) -> None:
     try:
         if is_mac():
-            subprocess.Popen(["open", url])
+            subprocess.Popen(["open", url], creationflags=_CF)
         elif is_linux():
-            subprocess.Popen(["xdg-open", url])
+            subprocess.Popen(["xdg-open", url], creationflags=_CF)
         else:
-            subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
+            subprocess.Popen(["cmd", "/c", "start", "", url], shell=False, creationflags=_CF)
     except Exception as e:
         print(f"[YouTube] ⚠️ open_url failed: {e}")
 
@@ -198,11 +200,11 @@ def _save_summary(content: str, video_url: str) -> str:
 
     try:
         if is_windows():
-            subprocess.Popen(["notepad.exe", str(filepath)])
+            subprocess.Popen(["notepad.exe", str(filepath)], creationflags=_CF)
         elif is_mac():
-            subprocess.Popen(["open", "-t", str(filepath)])
+            subprocess.Popen(["open", "-t", str(filepath)], creationflags=_CF)
         else:
-            subprocess.Popen(["xdg-open", str(filepath)])
+            subprocess.Popen(["xdg-open", str(filepath)], creationflags=_CF)
     except Exception as e:
         print(f"[YouTube] ⚠️ Could not open text editor: {e}")
 

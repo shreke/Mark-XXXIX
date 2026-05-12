@@ -1,7 +1,10 @@
+import sys
 import time
 import subprocess
 import platform
 import shutil
+
+_CF = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 try:
     import psutil
@@ -85,7 +88,7 @@ def _launch_windows(app_name: str) -> bool:
                 app_name,
                 shell=True,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, creationflags=_CF
             )
             time.sleep(1.5)
             return True
@@ -94,7 +97,7 @@ def _launch_windows(app_name: str) -> bool:
 
     if ":" in app_name:
         try:
-            subprocess.Popen(f"start {app_name}", shell=True)
+            subprocess.Popen(f"start {app_name}", shell=True, creationflags=_CF)
             time.sleep(1.0)
             return True
         except Exception:
@@ -121,7 +124,7 @@ def _launch_macos(app_name: str) -> bool:
     try:
         result = subprocess.run(
             ["open", "-a", app_name],
-            capture_output=True, timeout=8
+            capture_output=True, timeout=8, creationflags=_CF
         )
         if result.returncode == 0:
             time.sleep(1.0)
@@ -132,7 +135,7 @@ def _launch_macos(app_name: str) -> bool:
     try:
         result = subprocess.run(
             ["open", "-a", f"{app_name}.app"],
-            capture_output=True, timeout=8
+            capture_output=True, timeout=8, creationflags=_CF
         )
         if result.returncode == 0:
             time.sleep(1.0)
@@ -146,7 +149,7 @@ def _launch_macos(app_name: str) -> bool:
             subprocess.Popen(
                 [binary],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL, creationflags=_CF
             )
             time.sleep(1.0)
             return True
@@ -181,7 +184,7 @@ def _launch_linux(app_name: str) -> bool:
             subprocess.Popen(
                 [binary],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL, creationflags=_CF
             )
             time.sleep(1.0)
             return True
@@ -191,7 +194,7 @@ def _launch_linux(app_name: str) -> bool:
     try:
         subprocess.run(
             ["xdg-open", app_name],
-            capture_output=True, timeout=5
+            capture_output=True, timeout=5, creationflags=_CF
         )
         return True
     except Exception:
@@ -205,7 +208,7 @@ def _launch_linux(app_name: str) -> bool:
         try:
             result = subprocess.run(
                 ["gtk-launch", desktop_name],
-                capture_output=True, timeout=5
+                capture_output=True, timeout=5, creationflags=_CF
             )
             if result.returncode == 0:
                 return True

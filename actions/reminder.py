@@ -6,6 +6,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+_CF = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
@@ -177,7 +179,7 @@ def _schedule_windows(target_dt: datetime, task_name: str,
 
     result = subprocess.run(
         ["schtasks", "/Create", "/TN", task_name, "/XML", str(xml_path), "/F"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=_CF
     )
 
     try:
@@ -232,7 +234,7 @@ def _schedule_mac(target_dt: datetime, task_name: str,
 
     result = subprocess.run(
         ["launchctl", "load", str(plist_path)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, creationflags=_CF
     )
 
     if result.returncode != 0:
@@ -258,7 +260,7 @@ def _schedule_linux(target_dt: datetime, task_name: str,
                 "--",
                 sys.executable, str(script_path),
             ],
-            capture_output=True, text=True,
+            capture_output=True, text=True, creationflags=_CF
         )
         if result.returncode == 0:
             return task_name
@@ -269,7 +271,7 @@ def _schedule_linux(target_dt: datetime, task_name: str,
         cmd_str = f"{sys.executable} {script_path}\n"
         result  = subprocess.run(
             ["at", at_time],
-            input=cmd_str, capture_output=True, text=True,
+            input=cmd_str, capture_output=True, text=True, creationflags=_CF
         )
         if result.returncode == 0:
             return task_name
