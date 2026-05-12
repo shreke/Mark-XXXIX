@@ -1,0 +1,9 @@
+config/api_keys.json
+config/session.json
+
+__pycache__/
+*.pyc
+
+build/
+dist/
+MAIA.spec
