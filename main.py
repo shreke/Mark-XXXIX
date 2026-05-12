@@ -601,16 +601,21 @@ class JarvisLive:
         _session_path = BASE_DIR / "config" / "session.json"
         _usuario_nombre = "Usuario"
         _usuario_rol = "operaciones"
+        print(f"[MAIA] Buscando session en: {_session_path}")
+        print(f"[MAIA] Existe: {_session_path.exists()}")
         if _session_path.exists():
             try:
                 _sess = _json.loads(_session_path.read_text(encoding="utf-8"))
-                _usuario_nombre = _sess.get("nombre", "Usuario")
+                _usuario_nombre = _sess.get("nombre") or _sess.get("nombres") or "Usuario"
                 _usuario_rol = _sess.get("rol", "operaciones")
-            except Exception:
-                pass
-        print(f"[MAIA] Usuario: {_usuario_nombre} / Rol: {_usuario_rol}")
+                print(f"[MAIA] Usuario cargado: {_usuario_nombre} / {_usuario_rol}")
+            except Exception as e:
+                print(f"[MAIA] Error leyendo session.json: {e}")
+        else:
+            print(f"[MAIA] session.json NO encontrado en {_session_path}")
         sys_prompt = sys_prompt.replace("{USUARIO_NOMBRE}", _usuario_nombre)
         sys_prompt = sys_prompt.replace("{USUARIO_ROL}", _usuario_rol)
+        print(f"[MAIA] Prompt con usuario: {_usuario_nombre}")
 
         now      = datetime.now()
         time_str = now.strftime("%A, %B %d, %Y — %I:%M %p")
