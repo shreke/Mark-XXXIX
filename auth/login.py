@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 
-TMS_API = "https://app.maman.com.ar/api"
+TMS_API = "https://app.maman.com.ar/api/v1"
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -87,7 +87,7 @@ def show_login() -> bool:
             email_resp = usuario.get("email", email)
 
             # Verificar que tenga acceso a MAIA
-            if not usuario.get("acceso_maia", False) and rol not in ("admin",):
+            if not usuario.get("acceso_maia", False) and rol.upper() not in ("ADMIN",):
                 error_label.config(text="Tu usuario no tiene acceso a MAIA.")
                 btn.config(text="► INGRESAR", state="normal")
                 return
@@ -98,7 +98,7 @@ def show_login() -> bool:
             session_data = {
                 "nombre": nombre,
                 "email": email_resp,
-                "rol": rol,
+                "rol": rol.upper(),
                 "token": token
             }
             session_path.write_text(json.dumps(session_data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -109,6 +109,8 @@ def show_login() -> bool:
         except urllib.error.HTTPError as e:
             if e.code == 401:
                 error_label.config(text="Email o contraseña incorrectos.")
+            elif e.code == 403:
+                error_label.config(text="Usuario inactivo o acceso bloqueado.")
             else:
                 error_label.config(text=f"Error del servidor: {e.code}")
             btn.config(text="► INGRESAR", state="normal")
