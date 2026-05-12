@@ -94,6 +94,7 @@ def show_login() -> bool:
 
             # Guardar session.json
             session_path = get_base_dir() / "config" / "session.json"
+            print(f"[LOGIN] Escribiendo session en: {session_path}")
             session_path.parent.mkdir(exist_ok=True)
             session_data = {
                 "nombre": nombre,

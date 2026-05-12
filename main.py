@@ -598,24 +598,30 @@ class JarvisLive:
         sys_prompt = _load_system_prompt()
 
         import json as _json
-        _session_path = BASE_DIR / "config" / "session.json"
+        import os as _os
+
         _usuario_nombre = "Usuario"
         _usuario_rol = "operaciones"
-        print(f"[MAIA] Buscando session en: {_session_path}")
-        print(f"[MAIA] Existe: {_session_path.exists()}")
-        if _session_path.exists():
-            try:
-                _sess = _json.loads(_session_path.read_text(encoding="utf-8"))
-                _usuario_nombre = _sess.get("nombre") or _sess.get("nombres") or "Usuario"
-                _usuario_rol = _sess.get("rol", "operaciones")
-                print(f"[MAIA] Usuario cargado: {_usuario_nombre} / {_usuario_rol}")
-            except Exception as e:
-                print(f"[MAIA] Error leyendo session.json: {e}")
-        else:
-            print(f"[MAIA] session.json NO encontrado en {_session_path}")
+
+        # Buscar session.json en múltiples ubicaciones
+        _possible_paths = [
+            BASE_DIR / "config" / "session.json",
+            Path(_os.getcwd()) / "config" / "session.json",
+            Path(_os.path.dirname(_os.path.abspath(__file__))) / "config" / "session.json" if not getattr(sys, "frozen", False) else BASE_DIR / "config" / "session.json",
+        ]
+
+        for _session_path in _possible_paths:
+            if _session_path.exists():
+                try:
+                    _sess = _json.loads(_session_path.read_text(encoding="utf-8"))
+                    _usuario_nombre = _sess.get("nombre") or _sess.get("nombres") or "Usuario"
+                    _usuario_rol = _sess.get("rol", "operaciones")
+                    break
+                except Exception:
+                    continue
+
         sys_prompt = sys_prompt.replace("{USUARIO_NOMBRE}", _usuario_nombre)
         sys_prompt = sys_prompt.replace("{USUARIO_ROL}", _usuario_rol)
-        print(f"[MAIA] Prompt con usuario: {_usuario_nombre}")
 
         now      = datetime.now()
         time_str = now.strftime("%A, %B %d, %Y — %I:%M %p")
