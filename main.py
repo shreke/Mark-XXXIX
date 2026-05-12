@@ -608,6 +608,7 @@ class JarvisLive:
                 _usuario_rol = _sess.get("rol", "operaciones")
             except Exception:
                 pass
+        print(f"[MAIA] Usuario: {_usuario_nombre} / Rol: {_usuario_rol}")
         sys_prompt = sys_prompt.replace("{USUARIO_NOMBRE}", _usuario_nombre)
         sys_prompt = sys_prompt.replace("{USUARIO_ROL}", _usuario_rol)
 
