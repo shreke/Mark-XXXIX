@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 
-TMS_API = "https://app.maman.com.ar/api/v1"
+TMS_API = "https://mamantms-production.up.railway.app/api/v1"
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
